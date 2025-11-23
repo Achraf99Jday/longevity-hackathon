@@ -1,7 +1,7 @@
 """Base database configuration."""
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 import os
 from pathlib import Path
@@ -37,7 +37,40 @@ else:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
     DATABASE_URL = f"sqlite:///{db_path}"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+# SQLite connection args for better concurrency
+if "sqlite" in DATABASE_URL:
+    connect_args = {
+        "check_same_thread": False,
+        "timeout": 60.0,  # Wait up to 60 seconds for lock
+    }
+    # Enable WAL mode for better concurrency (allows concurrent reads and writes)
+    # Use NullPool to avoid connection pool issues with SQLite
+    from sqlalchemy.pool import NullPool
+    engine = create_engine(
+        DATABASE_URL, 
+        connect_args=connect_args, 
+        poolclass=NullPool,  # No connection pooling for SQLite - each request gets new connection
+        pool_pre_ping=False
+    )
+    
+    # Enable WAL mode after engine creation - this allows concurrent reads/writes
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_conn, connection_record):
+        try:
+            cursor = dbapi_conn.cursor()
+            # WAL mode allows multiple readers and one writer simultaneously
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")  # Faster than FULL, still safe
+            cursor.execute("PRAGMA busy_timeout=60000")  # 60 second timeout
+            cursor.execute("PRAGMA wal_autocheckpoint=1000")  # Auto-checkpoint
+            cursor.close()
+        except Exception:
+            # If database is locked, these pragmas will fail
+            # That's okay - the connection will still work with retries
+            pass
+else:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

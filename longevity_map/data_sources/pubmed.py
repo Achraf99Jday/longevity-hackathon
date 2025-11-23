@@ -23,13 +23,19 @@ def _setup_entrez():
     config = _load_config()
     api_config = config.get("api_keys", {}).get("pubmed", {})
     
-    email = api_config.get("email", "")
-    api_key = api_config.get("api_key", "")
+    email = api_config.get("email", "").strip()
+    api_key = api_config.get("api_key", "").strip()
     
+    # Set email (required by NCBI policy)
     if email:
         Entrez.email = email
+    
+    # Set API key (allows 10 requests/second instead of 3)
     if api_key:
         Entrez.api_key = api_key
+    
+    # Set tool parameter (required by NCBI policy for registered tools)
+    Entrez.tool = "LongevityR&DMap"
 
 
 def fetch_recent(cutoff_date: datetime, max_results: int = 1000) -> List[Dict[str, Any]]:
@@ -51,9 +57,10 @@ def fetch_recent(cutoff_date: datetime, max_results: int = 1000) -> List[Dict[st
         "AND (research OR study OR intervention OR mechanism)"
     )
     
-    # Date filter
+    # Date filter - format: YYYY/MM/DD[PDAT]
     date_str = cutoff_date.strftime("%Y/%m/%d")
-    query += f" AND {date_str}[PDAT] : {datetime.now().strftime('%Y/%m/%d')}[PDAT]"
+    today_str = datetime.now().strftime("%Y/%m/%d")
+    query += f" AND ({date_str}[PDAT] : {today_str}[PDAT])"
     
     papers = []
     
@@ -92,8 +99,12 @@ def fetch_recent(cutoff_date: datetime, max_results: int = 1000) -> List[Dict[st
                 if paper:
                     papers.append(paper)
             
-            # Rate limiting
-            time.sleep(0.34)  # Max 3 requests per second
+            # Rate limiting - with API key: 10 req/s, without: 3 req/s
+            # Use 0.1s (10 req/s) if API key is set, otherwise 0.34s (3 req/s)
+            config = _load_config()
+            api_key = config.get("api_keys", {}).get("pubmed", {}).get("api_key", "").strip()
+            sleep_time = 0.1 if api_key else 0.34
+            time.sleep(sleep_time)
     
     except Exception as e:
         print(f"Error fetching from PubMed: {e}")
@@ -142,7 +153,11 @@ def fetch_all(max_results: int = 10000) -> List[Dict[str, Any]]:
                 if paper:
                     papers.append(paper)
             
-            time.sleep(0.34)
+            # Rate limiting
+            config = _load_config()
+            api_key = config.get("api_keys", {}).get("pubmed", {}).get("api_key", "").strip()
+            sleep_time = 0.1 if api_key else 0.34
+            time.sleep(sleep_time)
     
     except Exception as e:
         print(f"Error fetching from PubMed: {e}")

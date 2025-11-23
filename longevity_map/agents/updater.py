@@ -8,6 +8,7 @@ from longevity_map.agents.capability_extractor import CapabilityExtractor
 from longevity_map.agents.resource_mapper import ResourceMapper
 from longevity_map.database.session import SessionLocal, init_db
 from longevity_map.models.problem import Problem
+from longevity_map.models.capability import Capability
 from longevity_map.models.mapping import ProblemCapabilityMapping, CapabilityResourceMapping
 from sqlalchemy.orm import Session
 import logging
@@ -88,10 +89,22 @@ class Updater(BaseAgent):
         
         # Fetch new items
         try:
-            items = source_module.fetch_recent(cutoff_date)
-        except AttributeError:
-            # Fallback if fetch_recent doesn't exist
-            items = source_module.fetch_all()
+            # Try fetch_recent first, with max_results limit
+            max_results = self.config.get("data_sources", {}).get(source_name, {}).get("max_results", 100)
+            if hasattr(source_module, 'fetch_recent'):
+                items = source_module.fetch_recent(cutoff_date, max_results=max_results)
+            else:
+                items = source_module.fetch_all(max_results=max_results)
+            
+            logger.info(f"Fetched {len(items)} items from {source_name}")
+            
+        except Exception as e:
+            logger.error(f"Error fetching from {source_name}: {e}")
+            return 0
+        
+        if not items:
+            logger.warning(f"No items fetched from {source_name}")
+            return 0
         
         # Process each item
         for item in items:
@@ -102,6 +115,12 @@ class Updater(BaseAgent):
                     source=source_name,
                     source_id=item.get("id")
                 )
+                
+                # Add source URL if available
+                if "doi" in item and item["doi"]:
+                    problem.source_url = f"https://doi.org/{item['doi']}"
+                elif source_name == "pubmed" and item.get("id"):
+                    problem.source_url = f"https://pubmed.ncbi.nlm.nih.gov/{item['id']}"
                 
                 # Check if problem already exists
                 existing = db.query(Problem).filter(

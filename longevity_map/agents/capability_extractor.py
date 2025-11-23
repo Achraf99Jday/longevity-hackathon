@@ -16,17 +16,34 @@ class CapabilityExtractor(BaseAgent):
         # Patterns for different capability types
         self.capability_patterns = {
             CapabilityType.MEASUREMENT_TOOL: [
-                r"measure(?:ment|ing|s)?\s+(?:of|for|tool|method|technique)",
+                r"(?:single-cell|bulk|spatial)\s+(?:RNA|DNA|ATAC)\s+sequencing",
+                r"flow\s+cytometry",
+                r"mass\s+spectrometry",
+                r"(?:confocal|fluorescence|electron|super-resolution)\s+microscopy",
+                r"qPCR|RT-PCR|PCR",
+                r"western\s+blot",
+                r"ELISA",
+                r"immunofluorescence",
+                r"sequencing\s+platform",
+                r"measurement\s+(?:tool|method|technique)",
                 r"assay", r"detection", r"quantification", r"imaging",
-                r"microscopy", r"flow cytometry", r"sequencing"
             ],
             CapabilityType.MODEL_SYSTEM: [
-                r"mouse model", r"animal model", r"cell line", r"organoid",
-                r"in vitro", r"in vivo", r"model system"
+                r"(?:mouse|rat|zebrafish|drosophila)\s+model",
+                r"animal\s+model",
+                r"cell\s+line",
+                r"organoid(?:s)?",
+                r"iPSC",
+                r"stem\s+cell",
+                r"in\s+vitro\s+model",
+                r"in\s+vivo\s+model",
             ],
             CapabilityType.DATASET: [
-                r"dataset", r"data", r"database", r"repository",
-                r"omics data", r"transcriptomic", r"proteomic"
+                r"(?:proteomic|transcriptomic|genomic|metabolomic)\s+dataset",
+                r"omics\s+data",
+                r"database",
+                r"repository",
+                r"public\s+dataset",
             ],
             CapabilityType.COMPUTATIONAL_METHOD: [
                 r"algorithm", r"computational", r"machine learning",
@@ -58,22 +75,42 @@ class CapabilityExtractor(BaseAgent):
         
         # Try LLM extraction first if enabled
         if self.llm.enabled:
-            llm_caps = self.llm.extract_capabilities(problem_text)
-            for cap_data in llm_caps:
-                try:
-                    cap_type = CapabilityType(cap_data.get("type", "other"))
-                except ValueError:
-                    cap_type = CapabilityType.OTHER
-                
-                cap = Capability(
-                    name=cap_data.get("name", "Unknown"),
-                    description=cap_data.get("description", ""),
-                    type=cap_type,
-                    estimated_cost=cap_data.get("estimated_cost_usd"),
-                    estimated_time=cap_data.get("estimated_time_months"),
-                    complexity_score=self._estimate_complexity_from_data(cap_data)
-                )
-                capabilities.append(cap)
+            try:
+                llm_caps = self.llm.extract_capabilities(problem_text)
+                if llm_caps and len(llm_caps) > 0:
+                    for cap_data in llm_caps:
+                        try:
+                            # Validate and convert type
+                            cap_type_str = cap_data.get("type", "other").lower()
+                            # Map common variations
+                            type_mapping = {
+                                "measurement_tool": CapabilityType.MEASUREMENT_TOOL,
+                                "model_system": CapabilityType.MODEL_SYSTEM,
+                                "dataset": CapabilityType.DATASET,
+                                "computational_method": CapabilityType.COMPUTATIONAL_METHOD,
+                                "software": CapabilityType.SOFTWARE,
+                                "hardware": CapabilityType.HARDWARE,
+                                "protocol": CapabilityType.PROTOCOL,
+                                "infrastructure": CapabilityType.INFRASTRUCTURE,
+                            }
+                            cap_type = type_mapping.get(cap_type_str, CapabilityType.OTHER)
+                            
+                            cap = Capability(
+                                name=cap_data.get("name", "Unknown").strip(),
+                                description=cap_data.get("description", "").strip(),
+                                type=cap_type,
+                                estimated_cost=cap_data.get("estimated_cost_usd") or cap_data.get("estimated_cost"),
+                                estimated_time=cap_data.get("estimated_time_months") or cap_data.get("estimated_time"),
+                                complexity_score=self._estimate_complexity_from_data(cap_data)
+                            )
+                            capabilities.append(cap)
+                        except Exception as e:
+                            import logging
+                            logging.warning(f"Error creating capability from LLM data: {e}, data: {cap_data}")
+                            continue
+            except Exception as e:
+                import logging
+                logging.error(f"Error in LLM capability extraction: {e}", exc_info=True)
         
         # Fallback to pattern-based extraction if LLM didn't find anything
         if not capabilities:
@@ -134,9 +171,38 @@ class CapabilityExtractor(BaseAgent):
     
     def _extract_capability_name(self, context: str, matched_text: str) -> str:
         """Extract a meaningful capability name from context."""
-        # Simple heuristic: look for noun phrases around the match
+        # Improved extraction: look for complete noun phrases
+        import re
+        
+        # Try to find complete phrases like "single-cell RNA sequencing", "mouse model", etc.
+        # Common patterns for capabilities
+        patterns = [
+            r'(?:single-cell|bulk|spatial)\s+(?:RNA|DNA|ATAC)\s+sequencing',
+            r'(?:mouse|rat|zebrafish)\s+model(?:s)?',
+            r'(?:flow\s+)?cytometry',
+            r'mass\s+spectrometry',
+            r'(?:confocal|fluorescence|electron)\s+microscopy',
+            r'(?:CRISPR|gene\s+editing)',
+            r'(?:proteomic|transcriptomic|genomic)\s+dataset',
+            r'organoid(?:s)?',
+            r'cell\s+line(?:s)?',
+        ]
+        
+        context_lower = context.lower()
+        for pattern in patterns:
+            match = re.search(pattern, context_lower, re.IGNORECASE)
+            if match:
+                # Extract the matched phrase and surrounding context
+                start = max(0, match.start() - 20)
+                end = min(len(context), match.end() + 20)
+                phrase = context[start:end].strip()
+                # Clean up
+                phrase = re.sub(r'\s+', ' ', phrase)
+                return phrase[:100]  # Limit length
+        
+        # Fallback to original method
         words = context.split()
-        match_idx = context.lower().find(matched_text.lower())
+        match_idx = context_lower.find(matched_text.lower())
         if match_idx == -1:
             return matched_text
         
@@ -149,9 +215,9 @@ class CapabilityExtractor(BaseAgent):
                 break
             char_pos += len(word) + 1
         
-        # Extract 2-4 words around the match
-        start = max(0, word_idx - 1)
-        end = min(len(words), word_idx + 3)
+        # Extract 3-5 words around the match for better context
+        start = max(0, word_idx - 2)
+        end = min(len(words), word_idx + 4)
         name = ' '.join(words[start:end])
         
         return name.strip()

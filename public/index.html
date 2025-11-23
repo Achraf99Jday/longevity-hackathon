@@ -61,6 +61,13 @@
             padding: 20px;
             border-radius: 10px;
             text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         
         .stat-card h3 {
@@ -109,24 +116,25 @@
             background: #5568d3;
         }
         
-        .problem-list {
+        .problem-list, .gap-list {
             display: grid;
             gap: 15px;
         }
         
-        .problem-card {
+        .problem-card, .gap-card {
             border: 1px solid #e0e0e0;
             border-radius: 10px;
             padding: 20px;
             transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
         }
         
-        .problem-card:hover {
+        .problem-card:hover, .gap-card:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         
-        .problem-card h3 {
+        .problem-card h3, .gap-card h4 {
             color: #667eea;
             margin-bottom: 10px;
         }
@@ -157,9 +165,6 @@
         .gap-card {
             background: #fff3cd;
             border-left: 4px solid #ffc107;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 15px;
         }
         
         .gap-card.critical {
@@ -171,6 +176,104 @@
             color: #333;
             margin-bottom: 10px;
         }
+        
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .close:hover {
+            color: #000;
+        }
+        
+        .modal-header {
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            color: #667eea;
+            margin: 0;
+        }
+        
+        .capability-list {
+            margin-top: 20px;
+        }
+        
+        .capability-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .capability-item h4 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .capability-item .type {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            margin-right: 10px;
+        }
+        
+        .source-link {
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .source-link:hover {
+            text-decoration: underline;
+        }
+        
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
     </style>
 </head>
 <body>
@@ -178,24 +281,67 @@
         <header>
             <h1>🧬 Longevity R&D Map</h1>
             <p>Mapping open problems in aging sciences to capabilities, resources, and gaps</p>
+            <div id="api-status" style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                <span id="api-status-text">Checking API connection...</span>
+            </div>
+            
+            <!-- AI Search Bar -->
+            <div style="margin-top: 20px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <div style="display: flex; gap: 10px; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px;">
+                    <input type="text" id="ai-search-input" placeholder="Ask me anything... (e.g., 'What problems need mouse models?')" 
+                           style="flex: 1; padding: 10px; border: none; border-radius: 5px; font-size: 1em;"
+                           onkeypress="if(event.key === 'Enter') performAISearch()">
+                    <button onclick="performAISearch()" style="padding: 10px 20px; background: white; color: #667eea; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                        🔍 Search
+                    </button>
+                </div>
+            </div>
         </header>
         
         <div class="content">
+            <!-- AI Search Results -->
+            <div id="ai-search-results" style="display: none; margin-bottom: 30px; padding: 20px; background: #f0f4ff; border-radius: 10px; border-left: 4px solid #667eea;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="color: #667eea; margin: 0;">🤖 AI Search Results</h2>
+                    <button onclick="closeAISearch()" style="background: #667eea; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer;">Close</button>
+                </div>
+                <div id="ai-search-summary" style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; font-size: 1.1em; line-height: 1.6;"></div>
+                <div id="ai-search-results-content"></div>
+                <div id="ai-search-suggestions" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
+                    <strong>💡 Try asking:</strong>
+                    <div id="ai-suggestions-list" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+            
+            <!-- AI Search Results -->
+            <div id="ai-search-results" style="display: none; margin-bottom: 30px; padding: 20px; background: #f0f4ff; border-radius: 10px; border-left: 4px solid #667eea;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="color: #667eea; margin: 0;">🤖 AI Search Results</h2>
+                    <button onclick="closeAISearch()" style="background: #667eea; color: white; border: none; padding: 5px 15px; border-radius: 5px; cursor: pointer;">Close</button>
+                </div>
+                <div id="ai-search-summary" style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 8px; font-size: 1.1em; line-height: 1.6;"></div>
+                <div id="ai-search-results-content"></div>
+                <div id="ai-search-suggestions" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
+                    <strong>💡 Try asking:</strong>
+                    <div id="ai-suggestions-list" style="margin-top: 10px;"></div>
+                </div>
+            </div>
+            
             <!-- Stats Section -->
             <div class="stats" id="stats">
-                <div class="stat-card">
+                <div class="stat-card" onclick="showAllProblems()">
                     <h3 id="stat-problems">-</h3>
                     <p>Problems</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="showAllCapabilities()">
                     <h3 id="stat-capabilities">-</h3>
                     <p>Capabilities</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="showAllResources()">
                     <h3 id="stat-resources">-</h3>
                     <p>Resources</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="showAllGaps()">
                     <h3 id="stat-gaps">-</h3>
                     <p>Gaps</p>
                 </div>
@@ -205,7 +351,7 @@
             <div class="section">
                 <h2>Research Problems</h2>
                 <div class="filters">
-                    <select id="category-filter">
+                    <select id="category-filter" onchange="loadProblems()">
                         <option value="">All Categories</option>
                         <option value="genomic_instability">Genomic Instability</option>
                         <option value="telomere_attrition">Telomere Attrition</option>
@@ -218,6 +364,8 @@
                         <option value="altered_intercellular_communication">Altered Intercellular Communication</option>
                     </select>
                     <button onclick="loadProblems()">Refresh</button>
+                    <button onclick="fetchRealData()" class="btn-secondary" id="fetch-btn">Fetch Real Data from PubMed</button>
+                    <button onclick="cancelFetch()" class="btn-secondary" id="cancel-btn" style="display:none; background: #dc3545;">Cancel Fetch</button>
                 </div>
                 <div id="problems-container" class="loading">Loading problems...</div>
             </div>
@@ -226,7 +374,7 @@
             <div class="section">
                 <h2>Infrastructure Gaps</h2>
                 <div class="filters">
-                    <select id="priority-filter">
+                    <select id="priority-filter" onchange="loadGaps()">
                         <option value="">All Priorities</option>
                         <option value="critical">Critical</option>
                         <option value="high">High</option>
@@ -248,84 +396,257 @@
         </div>
     </div>
     
+    <!-- Modal for Problem Details -->
+    <div id="problemModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('problemModal')">&times;</span>
+            <div class="modal-header">
+                <h2 id="modal-problem-title"></h2>
+                <span id="modal-problem-category" class="category"></span>
+            </div>
+            <div id="modal-problem-description"></div>
+            <div id="modal-problem-capabilities" class="capability-list"></div>
+            <div class="actions">
+                <a id="modal-problem-source" href="#" target="_blank" class="source-link">View Source →</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for Gap Details -->
+    <div id="gapModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('gapModal')">&times;</span>
+            <div class="modal-header">
+                <h2 id="modal-gap-title"></h2>
+                <span id="modal-gap-priority" class="category"></span>
+            </div>
+            <div id="modal-gap-description"></div>
+            <div id="modal-gap-stats"></div>
+            <div id="modal-gap-capability" class="capability-list"></div>
+        </div>
+    </div>
+    
     <script>
-        const API_BASE = window.location.hostname === 'localhost' 
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
             ? 'http://localhost:8000' 
             : '/api';
         
         async function fetchAPI(endpoint) {
             try {
-                const response = await fetch(`${API_BASE}${endpoint}`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                return await response.json();
+                console.log(`[API] Fetching: ${API_BASE}${endpoint}`);
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                });
+                console.log(`[API] Response status: ${response.status}`);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`[API] Error ${response.status}:`, errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+                }
+                const data = await response.json();
+                console.log(`[API] Success:`, endpoint, data?.length || 'object');
+                return data;
             } catch (error) {
-                console.error('API Error:', error);
+                console.error('[API] Fetch failed:', endpoint, error);
                 return null;
             }
         }
         
         async function loadStats() {
+            console.log('[UI] Loading stats...');
             const stats = await fetchAPI('/stats');
             if (stats) {
                 document.getElementById('stat-problems').textContent = stats.num_problems || 0;
                 document.getElementById('stat-capabilities').textContent = stats.num_capabilities || 0;
                 document.getElementById('stat-resources').textContent = stats.num_resources || 0;
                 document.getElementById('stat-gaps').textContent = stats.num_gaps || 0;
+                console.log('[UI] Stats loaded:', stats);
+            } else {
+                console.error('[UI] Failed to load stats');
+                document.getElementById('stat-problems').textContent = '?';
+                document.getElementById('stat-capabilities').textContent = '?';
+                document.getElementById('stat-resources').textContent = '?';
+                document.getElementById('stat-gaps').textContent = '?';
             }
         }
         
         async function loadProblems() {
+            console.log('[UI] Loading problems...');
+            const container = document.getElementById('problems-container');
+            container.innerHTML = '<p class="loading">Loading problems...</p>';
+            
             const category = document.getElementById('category-filter').value;
             const endpoint = category 
-                ? `/problems?category=${category}&limit=20`
-                : '/problems?limit=20';
+                ? `/problems?category=${category}&limit=50`
+                : '/problems?limit=50';
             
             const problems = await fetchAPI(endpoint);
-            const container = document.getElementById('problems-container');
             
             if (!problems || problems.length === 0) {
-                container.innerHTML = '<p>No problems found. Try running the data update script.</p>';
+                container.innerHTML = '<p>No problems found. Click "Fetch Real Data from PubMed" to load real research papers.</p>';
+                console.warn('[UI] No problems returned');
                 return;
             }
             
+            console.log(`[UI] Rendering ${problems.length} problems`);
             container.innerHTML = problems.map(p => `
-                <div class="problem-card">
-                    <span class="category">${p.category.replace(/_/g, ' ')}</span>
+                <div class="problem-card" onclick="showProblemDetails(${p.id})">
+                    <span class="category">${p.category.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                     <h3>${p.title}</h3>
                     <p>${p.description.substring(0, 200)}${p.description.length > 200 ? '...' : ''}</p>
+                    ${p.source_url ? `<a href="${p.source_url}" target="_blank" class="source-link" onclick="event.stopPropagation()">View Source →</a>` : ''}
                 </div>
             `).join('');
         }
         
-        async function loadGaps() {
-            const priority = document.getElementById('priority-filter').value;
-            const endpoint = priority 
-                ? `/gaps?priority=${priority}&limit=10`
-                : '/gaps?limit=10';
+        async function showProblemDetails(problemId) {
+            const problem = await fetchAPI(`/problems/${problemId}/capabilities`);
+            const problemInfo = await fetchAPI(`/problems/${problemId}`);
             
-            const gaps = await fetchAPI(endpoint);
-            const container = document.getElementById('gaps-container');
-            
-            if (!gaps || gaps.length === 0) {
-                container.innerHTML = '<p>No gaps found.</p>';
+            if (!problemInfo) {
+                // Try to get from problems list
+                const problems = await fetchAPI('/problems');
+                const p = problems.find(pr => pr.id === problemId);
+                if (p) {
+                    showProblemModal(p, problem || []);
+                }
                 return;
             }
             
+            showProblemModal(problemInfo, problem || []);
+        }
+        
+        function showProblemModal(problem, capabilities) {
+            document.getElementById('modal-problem-title').textContent = problem.title || 'Unknown Problem';
+            document.getElementById('modal-problem-category').textContent = (problem.category || 'other').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            document.getElementById('modal-problem-description').innerHTML = `<p>${(problem.description || '').replace(/\n/g, '<br>')}</p>`;
+            
+            // Show capabilities
+            const capContainer = document.getElementById('modal-problem-capabilities');
+            if (capabilities && capabilities.length > 0) {
+                capContainer.innerHTML = '<h3>Required Capabilities:</h3>' + capabilities.map(c => `
+                    <div class="capability-item" onclick="showCapabilityDetails(${c.capability.id})">
+                        <span class="type">${c.capability.type.replace(/_/g, ' ')}</span>
+                        <h4>${c.capability.name}</h4>
+                        <p>${c.capability.description || ''}</p>
+                        ${c.capability.estimated_cost ? `<p><strong>Estimated Cost:</strong> $${(c.capability.estimated_cost / 1000).toFixed(0)}K</p>` : ''}
+                        ${c.capability.estimated_time ? `<p><strong>Estimated Time:</strong> ${c.capability.estimated_time} months</p>` : ''}
+                    </div>
+                `).join('');
+            } else {
+                capContainer.innerHTML = '<p>No capabilities identified yet.</p>';
+            }
+            
+            // Source link
+            const sourceLink = document.getElementById('modal-problem-source');
+            if (problem.source === 'pubmed' && problem.source_id) {
+                sourceLink.href = `https://pubmed.ncbi.nlm.nih.gov/${problem.source_id}`;
+                sourceLink.textContent = 'View on PubMed →';
+                sourceLink.style.display = 'inline-block';
+            } else if (problem.source_url) {
+                sourceLink.href = problem.source_url;
+                sourceLink.textContent = 'View Source →';
+                sourceLink.style.display = 'inline-block';
+            } else {
+                sourceLink.style.display = 'none';
+            }
+            
+            document.getElementById('problemModal').style.display = 'block';
+        }
+        
+        async function showCapabilityDetails(capabilityId) {
+            const resources = await fetchAPI(`/capabilities/${capabilityId}/resources`);
+            const capability = await fetchAPI(`/capabilities/${capabilityId}`);
+            
+            if (capability) {
+                alert(`Capability: ${capability.name}\n\nType: ${capability.type}\nDescription: ${capability.description}\n\n${resources && resources.length > 0 ? `Found ${resources.length} matching resources.` : 'No matching resources found.'}`);
+            }
+        }
+        
+        async function loadGaps() {
+            console.log('[UI] Loading gaps...');
+            const container = document.getElementById('gaps-container');
+            container.innerHTML = '<p class="loading">Loading gaps...</p>';
+            
+            const priority = document.getElementById('priority-filter').value;
+            const endpoint = priority 
+                ? `/gaps?priority=${priority}&limit=20`
+                : '/gaps?limit=20';
+            
+            const gaps = await fetchAPI(endpoint);
+            
+            if (!gaps || gaps.length === 0) {
+                container.innerHTML = '<p>No gaps found.</p>';
+                console.warn('[UI] No gaps returned');
+                return;
+            }
+            
+            console.log(`[UI] Rendering ${gaps.length} gaps`);
             container.innerHTML = gaps.map(g => {
                 const priorityClass = g.priority === 'critical' ? 'critical' : '';
                 return `
-                    <div class="gap-card ${priorityClass}">
+                    <div class="gap-card ${priorityClass}" onclick="showGapDetails(${g.id})">
                         <h4>${g.capability?.name || 'Unknown Capability'}</h4>
-                        <p><strong>Priority:</strong> ${g.priority} | <strong>Blocked Value:</strong> $${(g.blocked_research_value / 1000000).toFixed(1)}M | <strong>Problems:</strong> ${g.num_blocked_problems}</p>
+                        <p><strong>Priority:</strong> ${g.priority.toUpperCase()} | 
+                           <strong>Blocked Value:</strong> $${(g.blocked_research_value / 1000000).toFixed(1)}M | 
+                           <strong>Problems Blocked:</strong> ${g.num_blocked_problems}</p>
                         <p>${g.description || ''}</p>
                     </div>
                 `;
             }).join('');
         }
         
+        async function showGapDetails(gapId) {
+            const gap = await fetchAPI(`/gaps/${gapId}`);
+            if (!gap) {
+                const gaps = await fetchAPI('/gaps');
+                const g = gaps.find(ga => ga.id === gapId);
+                if (g) showGapModal(g);
+                return;
+            }
+            showGapModal(gap);
+        }
+        
+        function showGapModal(gap) {
+            document.getElementById('modal-gap-title').textContent = gap.capability?.name || 'Unknown Capability';
+            document.getElementById('modal-gap-priority').textContent = gap.priority.toUpperCase();
+            document.getElementById('modal-gap-description').innerHTML = `<p>${gap.description || ''}</p>`;
+            
+            const stats = document.getElementById('modal-gap-stats');
+            stats.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 20px 0;">
+                    <div><strong>Blocked Research Value:</strong> $${(gap.blocked_research_value / 1000000).toFixed(1)}M</div>
+                    <div><strong>Problems Blocked:</strong> ${gap.num_blocked_problems}</div>
+                    <div><strong>Estimated Cost:</strong> $${gap.estimated_cost ? (gap.estimated_cost / 1000).toFixed(0) + 'K' : 'N/A'}</div>
+                    <div><strong>Estimated Time:</strong> ${gap.estimated_time || 'N/A'} months</div>
+                </div>
+            `;
+            
+            const capContainer = document.getElementById('modal-gap-capability');
+            if (gap.capability) {
+                capContainer.innerHTML = `
+                    <h3>Capability Details:</h3>
+                    <div class="capability-item">
+                        <h4>${gap.capability.name}</h4>
+                        <p>${gap.capability.description || ''}</p>
+                        <p><strong>Type:</strong> ${gap.capability.type.replace(/_/g, ' ')}</p>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('gapModal').style.display = 'block';
+        }
+        
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+        
         async function loadCategoryChart() {
             const problems = await fetchAPI('/problems?limit=1000');
-            if (!problems) return;
+            if (!problems || problems.length === 0) return;
             
             const categories = {};
             problems.forEach(p => {
@@ -333,7 +654,7 @@
             });
             
             const data = [{
-                x: Object.keys(categories).map(c => c.replace(/_/g, ' ')),
+                x: Object.keys(categories).map(c => c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())),
                 y: Object.values(categories),
                 type: 'bar',
                 marker: { color: '#667eea' }
@@ -348,17 +669,389 @@
             Plotly.newPlot('category-chart', data, layout);
         }
         
-        // Initialize
-        loadStats();
-        loadProblems();
-        loadGaps();
-        loadCategoryChart();
+        async function fetchRealData() {
+            if (!confirm('This will fetch real data from PubMed. It may take a few minutes. Continue?')) {
+                return;
+            }
+            
+            console.log('[UI] Starting fetch...');
+            const btn = document.getElementById('fetch-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            btn.disabled = true;
+            btn.textContent = 'Starting...';
+            cancelBtn.style.display = 'inline-block';
+            
+            try {
+                // Start the fetch
+                console.log(`[UI] POST ${API_BASE}/fetch-data`);
+                const response = await fetch(`${API_BASE}/fetch-data`, { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                console.log('[UI] Fetch response status:', response.status);
+                const data = await response.json();
+                console.log('[UI] Fetch response:', data);
+                
+                if (response.ok) {
+                    // Show progress modal
+                    showFetchProgress();
+                    
+                    // Poll for status
+                    let pollCount = 0;
+                    const maxPolls = 300; // 10 minutes max (300 * 2 seconds)
+                    const statusInterval = setInterval(async () => {
+                        pollCount++;
+                        try {
+                            const statusResponse = await fetch(`${API_BASE}/fetch-status`);
+                            const status = await statusResponse.json();
+                            
+                            updateFetchProgress(status);
+                            
+                            // Check if stuck (no progress for 2 minutes)
+                            if (pollCount > 60 && status.progress === 0 && status.running) {
+                                clearInterval(statusInterval);
+                                closeFetchProgress();
+                                alert('Fetch appears to be stuck. Please check the API server logs or try again.');
+                                btn.disabled = false;
+                                btn.textContent = 'Fetch Real Data from PubMed';
+                                return;
+                            }
+                            
+                            if (!status.running || pollCount >= maxPolls) {
+                                clearInterval(statusInterval);
+                                closeFetchProgress();
+                                btn.disabled = false;
+                                btn.textContent = 'Fetch Real Data from PubMed';
+                                cancelBtn.style.display = 'none';
+                                
+                                if (status.running && pollCount >= maxPolls) {
+                                    alert('Fetch timed out after 10 minutes. Some data may have been added.');
+                                } else {
+                                    // Show success message
+                                    const messageEl = document.getElementById('fetch-status-message');
+                                    if (messageEl) {
+                                        messageEl.textContent = status.message || 'Completed!';
+                                    }
+                                    setTimeout(() => {
+                                        closeFetchProgress();
+                                    }, 2000);
+                                }
+                                
+                                // Refresh the page data
+                                setTimeout(() => {
+                                    loadStats();
+                                    loadProblems();
+                                    loadGaps();
+                                    loadCategoryChart();
+                                }, 1000);
+                            }
+                        } catch (e) {
+                            console.error('Error checking status:', e);
+                            if (pollCount > 10) {
+                                clearInterval(statusInterval);
+                                closeFetchProgress();
+                                alert('Lost connection to server. Please refresh the page.');
+                                btn.disabled = false;
+                                btn.textContent = 'Fetch Real Data from PubMed';
+                            }
+                        }
+                    }, 2000); // Check every 2 seconds
+                } else {
+                    alert('Error: ' + (data.message || 'Failed to start fetch'));
+                    btn.disabled = false;
+                    btn.textContent = 'Fetch Real Data from PubMed';
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = 'Fetch Real Data from PubMed';
+            }
+        }
         
-        // Auto-refresh every 30 seconds
+        function showFetchProgress() {
+            // Create or show progress modal
+            let modal = document.getElementById('fetchProgressModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'fetchProgressModal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <span class="close" onclick="closeFetchProgress()">&times;</span>
+                        <div class="modal-header">
+                            <h2>Fetching Real Data from PubMed</h2>
+                        </div>
+                        <div id="fetch-progress-content">
+                            <p id="fetch-status-message">Starting...</p>
+                            <div style="margin: 20px 0;">
+                                <div style="background: #f0f0f0; border-radius: 10px; height: 20px; overflow: hidden;">
+                                    <div id="fetch-progress-bar" style="background: #667eea; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                                </div>
+                                <p id="fetch-progress-text" style="text-align: center; margin-top: 10px;">0 / 0</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            modal.style.display = 'block';
+        }
+        
+        function updateFetchProgress(status) {
+            const messageEl = document.getElementById('fetch-status-message');
+            const progressBar = document.getElementById('fetch-progress-bar');
+            const progressText = document.getElementById('fetch-progress-text');
+            
+            if (messageEl) messageEl.textContent = status.message || 'Processing...';
+            if (progressText) {
+                progressText.textContent = `${status.progress || 0} / ${status.total || 0}`;
+            }
+            if (progressBar && status.total > 0) {
+                const percent = ((status.progress || 0) / status.total) * 100;
+                progressBar.style.width = percent + '%';
+            }
+        }
+        
+        function closeFetchProgress() {
+            const modal = document.getElementById('fetchProgressModal');
+            if (modal) modal.style.display = 'none';
+        }
+        
+        async function cancelFetch() {
+            if (!confirm('Cancel the current fetch?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/fetch-cancel`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.status === 'cancelled') {
+                    closeFetchProgress();
+                    document.getElementById('fetch-btn').disabled = false;
+                    document.getElementById('fetch-btn').textContent = 'Fetch Real Data from PubMed';
+                    document.getElementById('cancel-btn').style.display = 'none';
+                    alert('Fetch cancelled');
+                }
+            } catch (error) {
+                alert('Error cancelling fetch: ' + error.message);
+            }
+        }
+        
+        function showAllProblems() {
+            document.getElementById('category-filter').value = '';
+            loadProblems();
+            document.getElementById('problems-container').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function showAllCapabilities() {
+            alert('Capabilities view coming soon! For now, click on problems to see their required capabilities.');
+        }
+        
+        function showAllResources() {
+            alert('Resources view coming soon!');
+        }
+        
+        function showAllGaps() {
+            document.getElementById('priority-filter').value = '';
+            loadGaps();
+            document.getElementById('gaps-container').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const problemModal = document.getElementById('problemModal');
+            const gapModal = document.getElementById('gapModal');
+            if (event.target == problemModal) {
+                problemModal.style.display = 'none';
+            }
+            if (event.target == gapModal) {
+                gapModal.style.display = 'none';
+            }
+        }
+        
+        // Test API connection first
+        async function testAPIConnection() {
+            const statusEl = document.getElementById('api-status-text');
+            try {
+                console.log('[UI] Testing API connection to:', API_BASE);
+                statusEl.textContent = 'Connecting to API...';
+                const response = await fetch(`${API_BASE}/stats`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-cache'
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[UI] ✅ API connected! Stats:', data);
+                    statusEl.textContent = `✅ API Connected | ${data.num_problems} Problems | ${data.num_capabilities} Capabilities`;
+                    statusEl.style.color = '#4caf50';
+                    return true;
+                } else {
+                    console.error('[UI] ❌ API returned error:', response.status);
+                    statusEl.textContent = `❌ API Error: HTTP ${response.status}`;
+                    statusEl.style.color = '#f44336';
+                    return false;
+                }
+            } catch (error) {
+                console.error('[UI] ❌ API connection failed:', error);
+                statusEl.textContent = `❌ Cannot connect to API at ${API_BASE}`;
+                statusEl.style.color = '#f44336';
+                alert(`Cannot connect to API at ${API_BASE}.\n\nError: ${error.message}\n\nMake sure the API server is running:\nnpm start`);
+                return false;
+            }
+        }
+        
+        // Initialize on page load
+        console.log('[UI] Initializing page...');
+        console.log('[UI] API_BASE:', API_BASE);
+        console.log('[UI] Current URL:', window.location.href);
+        
+        // Test connection, then load data
+        testAPIConnection().then(connected => {
+            if (connected) {
+                // Load data immediately
+                Promise.all([
+                    loadStats(),
+                    loadProblems(),
+                    loadGaps(),
+                    loadCategoryChart()
+                ]).then(() => {
+                    console.log('[UI] Initial load complete');
+                }).catch(error => {
+                    console.error('[UI] Initial load error:', error);
+                });
+            } else {
+                // Show error message
+                document.getElementById('problems-container').innerHTML = 
+                    '<p style="color: red;">❌ Cannot connect to API. Make sure the API server is running on port 8000.</p>';
+                document.getElementById('gaps-container').innerHTML = 
+                    '<p style="color: red;">❌ API connection failed.</p>';
+            }
+        });
+        
+        // Auto-refresh stats every 30 seconds
         setInterval(() => {
             loadStats();
         }, 30000);
+        
+        // AI Search Functions
+        async function performAISearch() {
+            const input = document.getElementById('ai-search-input');
+            const query = input.value.trim();
+            
+            if (!query) {
+                alert('Please enter a search query');
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('ai-search-results');
+            const summaryDiv = document.getElementById('ai-search-summary');
+            const contentDiv = document.getElementById('ai-search-results-content');
+            const suggestionsDiv = document.getElementById('ai-suggestions-list');
+            
+            resultsDiv.style.display = 'block';
+            summaryDiv.innerHTML = '<strong>🔍 Searching with AI...</strong>';
+            contentDiv.innerHTML = '';
+            suggestionsDiv.innerHTML = '';
+            
+            try {
+                console.log('[AI Search] Query:', query);
+                const response = await fetch(`${API_BASE}/search?query=${encodeURIComponent(query)}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('[AI Search] Results:', data);
+                
+                // Show summary
+                summaryDiv.innerHTML = `<strong>💬 ${data.summary || 'Search completed'}</strong>`;
+                
+                // Show results
+                let html = '';
+                
+                if (data.results && data.results.problems && data.results.problems.length > 0) {
+                    html += '<h3 style="color: #667eea; margin-top: 20px;">📋 Problems (' + (data.total_problems || data.results.problems.length) + ')</h3>';
+                    html += '<div style="display: grid; gap: 10px; margin-top: 10px;">';
+                    data.results.problems.slice(0, 5).forEach(p => {
+                        html += `
+                            <div class="problem-card" onclick="showProblemDetails(${p.id})" style="cursor: pointer;">
+                                <span class="category">${p.category.replace(/_/g, ' ')}</span>
+                                <h4>${p.title}</h4>
+                                <p>${p.description.substring(0, 150)}...</p>
+                                ${p.reason ? `<small style="color: #666;">💡 ${p.reason}</small>` : ''}
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+                
+                if (data.results && data.results.capabilities && data.results.capabilities.length > 0) {
+                    html += '<h3 style="color: #667eea; margin-top: 20px;">🛠️ Capabilities (' + (data.total_capabilities || data.results.capabilities.length) + ')</h3>';
+                    html += '<div style="display: grid; gap: 10px; margin-top: 10px;">';
+                    data.results.capabilities.slice(0, 5).forEach(c => {
+                        html += `
+                            <div style="padding: 15px; background: white; border-radius: 8px; border-left: 3px solid #667eea;">
+                                <strong>${c.name}</strong> (${c.type.replace(/_/g, ' ')})
+                                <p style="margin-top: 5px; color: #666;">${c.description ? c.description.substring(0, 100) + '...' : ''}</p>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+                
+                if (data.results && data.results.gaps && data.results.gaps.length > 0) {
+                    html += '<h3 style="color: #667eea; margin-top: 20px;">⚠️ Gaps (' + (data.total_gaps || data.results.gaps.length) + ')</h3>';
+                    html += '<div style="display: grid; gap: 10px; margin-top: 10px;">';
+                    data.results.gaps.slice(0, 5).forEach(g => {
+                        html += `
+                            <div class="gap-card" onclick="showGapDetails(${g.id})" style="cursor: pointer;">
+                                <h4>${g.capability_name}</h4>
+                                <p><strong>Priority:</strong> ${g.priority.toUpperCase()} | 
+                                   <strong>Blocked Value:</strong> $${(g.blocked_value / 1000000).toFixed(1)}M</p>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+                
+                if (!html) {
+                    html = '<p>No results found. Try rephrasing your query or ask something like:<br>"What problems need mouse models?" or "Show me gaps in mitochondrial research"</p>';
+                }
+                
+                contentDiv.innerHTML = html;
+                
+                // Show suggestions
+                if (data.suggestions && data.suggestions.length > 0) {
+                    suggestionsDiv.innerHTML = data.suggestions.map(s => 
+                        `<button onclick="document.getElementById('ai-search-input').value='${s.replace(/'/g, "\\'")}'; performAISearch();" 
+                                 style="margin: 5px; padding: 8px 15px; background: white; border: 1px solid #667eea; color: #667eea; border-radius: 5px; cursor: pointer;">
+                            ${s}
+                         </button>`
+                    ).join('');
+                }
+                
+                // Scroll to results
+                resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+            } catch (error) {
+                console.error('[AI Search] Error:', error);
+                summaryDiv.innerHTML = `<strong style="color: red;">❌ Error: ${error.message}</strong>`;
+                contentDiv.innerHTML = '<p>Make sure the API server is running and OpenAI API key is configured.</p>';
+            }
+        }
+        
+        function closeAISearch() {
+            document.getElementById('ai-search-results').style.display = 'none';
+            document.getElementById('ai-search-input').value = '';
+        }
     </script>
 </body>
 </html>
-

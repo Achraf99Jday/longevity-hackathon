@@ -104,36 +104,62 @@ Return JSON format:
             return []
         
         try:
-            prompt = f"""From this aging research problem, identify all required capabilities (tools, technologies, datasets, methods):
+            prompt = f"""You are an expert in aging research infrastructure. Analyze this research problem and identify ALL specific capabilities (tools, technologies, datasets, methods, equipment) needed to solve it.
 
-{problem_text[:1500]}
+Research Problem:
+{problem_text[:2000]}
 
-Return JSON array of capabilities:
-[
-    {{
-        "name": "capability name",
-        "type": "measurement_tool|model_system|dataset|computational_method|software|hardware|protocol|infrastructure",
-        "description": "what it does and why it's needed",
-        "estimated_cost_usd": 50000,
-        "estimated_time_months": 6
-    }}
-]"""
+Think carefully about:
+- What measurement tools are needed? (e.g., flow cytometry, mass spectrometry, sequencing platforms)
+- What model systems? (e.g., mouse models, cell lines, organoids)
+- What datasets or databases? (e.g., transcriptomic data, proteomic databases)
+- What computational methods or software? (e.g., machine learning models, analysis pipelines)
+- What hardware or equipment? (e.g., microscopes, bioreactors, imaging systems)
+- What protocols or methods? (e.g., specific experimental protocols, standardized procedures)
+- What infrastructure? (e.g., core facilities, specialized labs)
+
+Be SPECIFIC and DETAILED. Identify 3-8 concrete capabilities.
+
+Return JSON format with a "capabilities" array:
+{{
+    "capabilities": [
+        {{
+            "name": "Specific capability name (e.g., 'Single-cell RNA sequencing platform')",
+            "type": "measurement_tool|model_system|dataset|computational_method|software|hardware|protocol|infrastructure",
+            "description": "Detailed description of what it does and why it's needed for this specific problem",
+            "estimated_cost_usd": 50000,
+            "estimated_time_months": 6
+        }}
+    ]
+}}"""
             
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert in research infrastructure and tools. Identify what capabilities are needed to solve research problems."},
+                    {"role": "system", "content": "You are an expert in aging research infrastructure, tools, and technologies. You identify specific, concrete capabilities needed to solve research problems. Always return a JSON object with a 'capabilities' array, even if you find just 1 capability."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2,
+                temperature=0.3,
+                max_tokens=2000,
                 response_format={"type": "json_object"}
             )
             
             result = json.loads(response.choices[0].message.content)
-            return result.get("capabilities", [])
+            capabilities = result.get("capabilities", [])
+            
+            if not capabilities:
+                logger.warning(f"No capabilities extracted from LLM for text: {problem_text[:100]}...")
+            else:
+                logger.info(f"LLM extracted {len(capabilities)} capabilities")
+            
+            return capabilities
         
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error in LLM capability extraction: {e}")
+            logger.error(f"Response was: {response.choices[0].message.content[:500] if 'response' in locals() else 'No response'}")
+            return []
         except Exception as e:
-            logger.error(f"Error in LLM capability extraction: {e}")
+            logger.error(f"Error in LLM capability extraction: {e}", exc_info=True)
             return []
     
     def classify_category(self, text: str) -> str:

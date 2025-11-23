@@ -1,11 +1,13 @@
 """FastAPI application for longevity R&D map."""
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import yaml
 from pathlib import Path
+import threading
+import logging
 
 from longevity_map.database.session import get_db, init_db
 from longevity_map.models.problem import Problem, ProblemCategory
@@ -49,6 +51,10 @@ gap_analyzer = GapAnalyzer()
 coordination_agent = CoordinationAgent()
 funding_agent = FundingAgent()
 
+# Global state for fetch status
+fetch_status = {"running": False, "progress": 0, "total": 0, "message": ""}
+fetch_lock = threading.Lock()
+
 
 @app.get("/")
 def root():
@@ -88,6 +94,23 @@ def get_problems(
         for p in problems
     ]
 
+
+@app.get("/problems/{problem_id}")
+def get_problem(problem_id: int, db: Session = Depends(get_db)):
+    """Get a single problem by ID."""
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
+    
+    return {
+        "id": problem.id,
+        "title": problem.title,
+        "description": problem.description,
+        "category": problem.category.value,
+        "source": problem.source,
+        "source_id": problem.source_id,
+        "source_url": problem.source_url or (f"https://pubmed.ncbi.nlm.nih.gov/{problem.source_id}" if problem.source == "pubmed" and problem.source_id else None)
+    }
 
 @app.get("/problems/{problem_id}/capabilities", response_model=List[dict])
 def get_problem_capabilities(problem_id: int, db: Session = Depends(get_db)):
@@ -142,6 +165,23 @@ def get_capabilities(
         for c in capabilities
     ]
 
+
+@app.get("/capabilities/{capability_id}")
+def get_capability(capability_id: int, db: Session = Depends(get_db)):
+    """Get a single capability by ID."""
+    capability = db.query(Capability).filter(Capability.id == capability_id).first()
+    if not capability:
+        raise HTTPException(status_code=404, detail="Capability not found")
+    
+    return {
+        "id": capability.id,
+        "name": capability.name,
+        "description": capability.description,
+        "type": capability.type.value,
+        "estimated_cost": capability.estimated_cost,
+        "estimated_time": capability.estimated_time,
+        "complexity_score": capability.complexity_score
+    }
 
 @app.get("/capabilities/{capability_id}/resources", response_model=List[dict])
 def get_capability_resources(capability_id: int, db: Session = Depends(get_db)):
@@ -207,6 +247,31 @@ def get_gaps(
         }
         for g in gaps
     ]
+
+@app.get("/gaps/{gap_id}")
+def get_gap(gap_id: int, db: Session = Depends(get_db)):
+    """Get a single gap by ID."""
+    gap = db.query(Gap).filter(Gap.id == gap_id).first()
+    if not gap:
+        raise HTTPException(status_code=404, detail="Gap not found")
+    
+    return {
+        "id": gap.id,
+        "capability_id": gap.capability_id,
+        "capability": {
+            "id": gap.capability.id,
+            "name": gap.capability.name,
+            "description": gap.capability.description,
+            "type": gap.capability.type.value
+        },
+        "description": gap.description,
+        "estimated_cost": gap.estimated_cost,
+        "estimated_time": gap.estimated_time,
+        "blocked_research_value": gap.blocked_research_value,
+        "num_blocked_problems": gap.num_blocked_problems,
+        "priority": gap.priority.value,
+        "impact_score": gap.impact_score
+    }
 
 
 @app.get("/matrix/problem-capability")
@@ -275,6 +340,264 @@ def get_gaps_by_funding_potential(
     ranked = funding_agent.rank_gaps_by_funding_potential(db, top_n)
     return {"gaps": ranked}
 
+
+# Global state for fetch status
+fetch_status = {"running": False, "progress": 0, "total": 0, "message": ""}
+fetch_lock = threading.Lock()
+
+def fetch_data_background():
+    """Fetch data in background with proper database connection handling."""
+    global fetch_status
+    
+    with fetch_lock:
+        if fetch_status["running"]:
+            return
+        fetch_status["running"] = True
+        fetch_status["progress"] = 0
+        fetch_status["total"] = 0
+        fetch_status["message"] = "Starting data fetch..."
+    
+    try:
+        from longevity_map.database.session import SessionLocal
+        from longevity_map.data_sources import pubmed
+        from datetime import datetime, timedelta
+        import time
+        
+        # Create a NEW database session for this background task
+        db = SessionLocal()
+        
+        try:
+            fetch_status["message"] = "Fetching papers from PubMed..."
+            
+            # Fetch papers first - start with just 3 for speed
+            cutoff = datetime.now() - timedelta(days=30)
+            papers = pubmed.fetch_recent(cutoff, max_results=3)
+            
+            fetch_status["total"] = len(papers)
+            fetch_status["message"] = f"Processing {len(papers)} papers..."
+            
+            from longevity_map.agents.problem_parser import ProblemParser
+            from longevity_map.agents.capability_extractor import CapabilityExtractor
+            from longevity_map.models.problem import Problem
+            from longevity_map.models.capability import Capability
+            from longevity_map.models.mapping import ProblemCapabilityMapping
+            from sqlalchemy.exc import OperationalError
+            
+            parser = ProblemParser()
+            extractor = CapabilityExtractor()
+            
+            problems_added = 0
+            
+            for i, paper in enumerate(papers, 1):
+                # Check if cancelled
+                if not fetch_status["running"]:
+                    break
+                    
+                try:
+                    fetch_status["progress"] = i
+                    fetch_status["message"] = f"Processing paper {i}/{len(papers)}: {paper['title'][:50]}..."
+                    
+                    # Check if exists
+                    try:
+                        existing = db.query(Problem).filter(
+                            Problem.source == "pubmed",
+                            Problem.source_id == paper['id']
+                        ).first()
+                    except OperationalError:
+                        # DB locked on read, skip this paper
+                        fetch_status["message"] = f"Paper {i}: Database busy, skipping..."
+                        continue
+                    
+                    if existing:
+                        continue
+                    
+                    # Parse problem
+                    problem = parser.process(
+                        paper.get("text", paper.get("abstract", "")),
+                        source="pubmed",
+                        source_id=paper['id']
+                    )
+                    
+                    problem.source_url = f"https://pubmed.ncbi.nlm.nih.gov/{paper['id']}"
+                    if paper.get('doi'):
+                        problem.source_url = f"https://doi.org/{paper['doi']}"
+                    
+                    # Try to save problem - skip immediately if locked (don't block)
+                    try:
+                        db.add(problem)
+                        db.flush()
+                        problems_added += 1
+                    except OperationalError as e:
+                        if "locked" in str(e).lower():
+                            fetch_status["message"] = f"Paper {i}: Database locked, skipping..."
+                            logging.warning(f"Could not save paper {i}: database locked, skipping")
+                            try:
+                                db.rollback()
+                            except:
+                                pass
+                            continue  # Skip to next paper immediately
+                        else:
+                            raise
+                    
+                    # Extract capabilities (with timeout protection)
+                    try:
+                        capabilities = extractor.process(
+                            problem.description,
+                            problem_id=problem.id
+                        )
+                    except Exception as e:
+                        fetch_status["message"] = f"Paper {i}: Error extracting capabilities: {str(e)[:50]}..."
+                        logging.error(f"Error extracting capabilities for paper {i}: {e}")
+                        capabilities = []
+                    
+                    for cap in capabilities:
+                        existing_cap = db.query(Capability).filter(
+                            Capability.name == cap.name,
+                            Capability.type == cap.type
+                        ).first()
+                        
+                        if existing_cap:
+                            cap = existing_cap
+                        else:
+                            # Try to save capability, but don't block forever
+                            try:
+                                db.add(cap)
+                                db.flush()
+                            except OperationalError as e:
+                                if "locked" in str(e).lower():
+                                    # Skip this capability if DB is locked
+                                    logging.warning(f"Could not save capability {cap.name}: {e}")
+                                    continue
+                                else:
+                                    raise
+                        
+                        # Create mapping
+                        try:
+                            mapping = ProblemCapabilityMapping(
+                                problem_id=problem.id,
+                                capability_id=cap.id,
+                                confidence_score=0.8
+                            )
+                            db.add(mapping)
+                            db.commit()
+                        except OperationalError as e:
+                            if "locked" in str(e).lower():
+                                # Skip this mapping if DB is locked
+                                logging.warning(f"Could not save mapping: {e}")
+                                try:
+                                    db.rollback()
+                                except:
+                                    pass
+                                continue
+                            else:
+                                raise
+                    
+                except Exception as e:
+                    error_msg = str(e)[:100]
+                    fetch_status["message"] = f"Paper {i}: Error - {error_msg}... (skipping)"
+                    logging.error(f"Error processing paper {i}: {e}", exc_info=True)
+                    try:
+                        db.rollback()
+                    except:
+                        pass
+                    # Create new session
+                    try:
+                        db.close()
+                    except:
+                        pass
+                    db = SessionLocal()
+                    # Update progress even on error
+                    fetch_status["progress"] = i
+                    continue
+            
+            fetch_status["message"] = f"Completed! Added {problems_added} problems."
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        error_msg = str(e)[:200]
+        fetch_status["message"] = f"Error: {error_msg}"
+        logging.error(f"Background fetch error: {e}", exc_info=True)
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+        with fetch_lock:
+            fetch_status["running"] = False
+            if fetch_status["progress"] == 0:
+                fetch_status["message"] = "Failed to start. Check API server logs."
+
+@app.get("/search")
+def conversational_search(query: str = Query(..., description="Natural language search query"), db: Session = Depends(get_db)):
+    """
+    Conversational search powered by GPT-4o.
+    
+    Examples:
+    - "What problems need mouse models?"
+    - "Show me gaps in mitochondrial research"
+    - "What capabilities are needed for senolytic research?"
+    - "Find problems related to telomeres"
+    """
+    from longevity_map.utils.llm_search import LLMSearch
+    
+    try:
+        search_engine = LLMSearch()
+        results = search_engine.search(query, db)
+        return results
+    except Exception as e:
+        logging.error(f"Error in conversational search: {e}", exc_info=True)
+        return {
+            "query": query,
+            "results": {},
+            "summary": f"Search error: {str(e)}",
+            "suggestions": []
+        }
+
+@app.post("/fetch-data")
+def trigger_fetch_data(background_tasks: BackgroundTasks):
+    """Trigger data fetch from sources (runs in background seamlessly)."""
+    global fetch_status
+    
+    with fetch_lock:
+        if fetch_status["running"]:
+            return {
+                "status": "already_running",
+                "message": fetch_status["message"],
+                "progress": fetch_status["progress"],
+                "total": fetch_status["total"]
+            }
+        
+        # Start background task
+        background_tasks.add_task(fetch_data_background)
+        
+        return {
+            "status": "started",
+            "message": "Data fetch started in background. Use /fetch-status to check progress."
+        }
+
+@app.get("/fetch-status")
+def get_fetch_status():
+    """Get the status of the background data fetch."""
+    return {
+        "running": fetch_status["running"],
+        "progress": fetch_status["progress"],
+        "total": fetch_status["total"],
+        "message": fetch_status["message"]
+    }
+
+
+@app.post("/fetch-cancel")
+def cancel_fetch():
+    """Cancel the running fetch (if stuck)."""
+    global fetch_status
+    with fetch_lock:
+        if fetch_status["running"]:
+            fetch_status["running"] = False
+            fetch_status["message"] = "Cancelled by user"
+            return {"status": "cancelled", "message": "Fetch cancelled"}
+        return {"status": "not_running", "message": "No fetch in progress"}
 
 @app.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
