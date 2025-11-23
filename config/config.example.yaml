@@ -1,0 +1,78 @@
+# Longevity R&D Map Configuration
+
+# API Keys
+api_keys:
+  pubmed:
+    email: "your-email@example.com"  # Required for PubMed API
+    api_key: ""  # Optional but recommended
+  clinical_trials:
+    # No API key required
+  openai:
+    api_key: ""  # For LLM-based extraction (add your OpenAI API key here)
+  crunchbase:
+    api_key: ""  # Optional
+  pitchbook:
+    api_key: ""  # Optional
+
+# Database
+database:
+  type: "sqlite"  # or "postgresql"
+  sqlite_path: "data/longevity_map.db"
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "longevity_map"
+    user: "postgres"
+    password: ""
+
+# Data Sources
+data_sources:
+  pubmed:
+    enabled: true
+    batch_size: 100
+    max_results: 10000
+  clinical_trials:
+    enabled: true
+  patents:
+    enabled: false  # Requires additional setup
+  grants:
+    enabled: true
+  preprints:
+    enabled: true
+  aging_databases:
+    enabled: true
+
+# Agent Configuration
+agents:
+  problem_parser:
+    model: "gpt-4o"  # Latest GPT-4o model (or "gpt-4o-mini" for faster/cheaper)
+    temperature: 0.3
+    max_tokens: 2000
+  capability_extractor:
+    model: "gpt-4o"  # Latest GPT-4o model
+    temperature: 0.2
+    max_tokens: 3000
+  resource_mapper:
+    similarity_threshold: 0.7
+  gap_analyzer:
+    cost_weight: 0.3
+    time_weight: 0.3
+    impact_weight: 0.4
+
+# Update Schedule
+updater:
+  enabled: true
+  schedule: "daily"  # daily, weekly, monthly
+  time: "02:00"  # UTC time
+
+# API Server
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+
+# Logging
+logging:
+  level: "INFO"
+  file: "logs/longevity_map.log"
+
