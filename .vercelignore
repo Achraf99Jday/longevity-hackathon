@@ -27,4 +27,6 @@ logs/
 .DS_Store
 Thumbs.db
 config/config.yaml
-
+node_modules/
+package-lock.json
+yarn.lock
