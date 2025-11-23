@@ -19,8 +19,16 @@ class BaseAgent(ABC):
             if not config_path.exists():
                 config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
         
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        try:
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    self.config = yaml.safe_load(f) or {}
+            else:
+                self.config = {}
+                logger.warning(f"No config file found at {config_path}, using defaults")
+        except Exception as e:
+            logger.warning(f"Could not load config from {config_path}: {e}, using defaults")
+            self.config = {}
         
         self.agent_config = self.config.get("agents", {}).get(self.__class__.__name__.lower(), {})
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")

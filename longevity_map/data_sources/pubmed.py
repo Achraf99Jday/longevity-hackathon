@@ -14,8 +14,14 @@ def _load_config() -> Dict[str, Any]:
     if not config_path.exists():
         config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
     
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+    try:
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f) or {}
+        else:
+            return {}
+    except Exception:
+        return {}
 
 
 def _setup_entrez():
