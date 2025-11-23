@@ -21,8 +21,18 @@ class LLMHelper:
             if not config_path.exists():
                 config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
         
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        try:
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                config = {}
+                import logging
+                logging.warning(f"No config file found at {config_path}, using defaults")
+        except Exception as e:
+            import logging
+            logging.warning(f"Could not load config from {config_path}: {e}, using defaults")
+            config = {}
         
         # Get API key from config or environment variable
         api_key = (
