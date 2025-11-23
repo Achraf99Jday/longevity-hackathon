@@ -31,9 +31,13 @@ config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
 if not config_path.exists():
     config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
 
+config = {}
 try:
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f) or {}
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f) or {}
+    else:
+        logging.warning("No config file found, using defaults")
 except Exception as e:
     logging.warning(f"Could not load config file: {e}. Using defaults.")
     config = {}

@@ -7,13 +7,24 @@ import os
 from pathlib import Path
 import yaml
 
-# Load configuration
+# Load configuration with error handling
 config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
 if not config_path.exists():
     config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
 
-with open(config_path, 'r') as f:
-    config = yaml.safe_load(f)
+try:
+    if config_path.exists():
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f) or {}
+    else:
+        # If no config file exists, use defaults
+        config = {}
+        import logging
+        logging.warning("No config file found, using defaults")
+except Exception as e:
+    import logging
+    logging.warning(f"Could not load config: {e}, using defaults")
+    config = {}
 
 db_config = config.get("database", {})
 
