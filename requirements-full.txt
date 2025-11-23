@@ -19,8 +19,7 @@ biopython>=1.81
 # Database (SQLite is built-in, PostgreSQL optional)
 # psycopg2-binary>=2.9.0  # Only if using PostgreSQL
 
-# Note: Heavy dependencies like sentence-transformers, spacy, dash, plotly, numpy, pandas
+# Note: Heavy dependencies like sentence-transformers, spacy, dash, plotly
 # are NOT included here to keep the serverless function size small.
 # These are only needed for local development and data processing scripts.
-# The API will use simple keyword matching instead of ML models.
 

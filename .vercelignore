@@ -30,3 +30,12 @@ config/config.yaml
 node_modules/
 package-lock.json
 yarn.lock
+requirements-full.txt
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/

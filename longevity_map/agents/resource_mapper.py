@@ -6,8 +6,20 @@ from longevity_map.models.capability import Capability
 from longevity_map.agents.base_agent import BaseAgent
 from longevity_map.database.session import SessionLocal
 from sqlalchemy.orm import Session
-from sentence_transformers import SentenceTransformer
-import numpy as np
+# Lazy import to avoid loading heavy model in serverless
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+    SentenceTransformer = None
+# numpy is optional - only needed if sentence-transformers is available
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 
 class ResourceMapper(BaseAgent):
@@ -16,12 +28,16 @@ class ResourceMapper(BaseAgent):
     def __init__(self, config_path=None):
         super().__init__(config_path)
         self.similarity_threshold = self.agent_config.get("similarity_threshold", 0.7)
-        # Initialize sentence transformer for semantic similarity
-        try:
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-        except Exception as e:
-            self.log(f"Could not load sentence transformer: {e}. Using simple matching.", "WARNING")
-            self.model = None
+        # Initialize sentence transformer for semantic similarity (lazy load)
+        self.model = None
+        if SENTENCE_TRANSFORMERS_AVAILABLE:
+            try:
+                self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            except Exception as e:
+                self.log(f"Could not load sentence transformer: {e}. Using simple matching.", "WARNING")
+                self.model = None
+        else:
+            self.log("Sentence transformers not available. Using simple matching.", "INFO")
     
     def process(self, capability: Capability, db: Session) -> List[Tuple[Resource, float]]:
         """
@@ -82,9 +98,17 @@ class ResourceMapper(BaseAgent):
         try:
             resource_text = f"{resource.name} {resource.description}"
             embeddings = self.model.encode([capability_text, resource_text])
-            similarity = np.dot(embeddings[0], embeddings[1]) / (
-                np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1])
-            )
+            # Use numpy if available, otherwise calculate manually
+            if NUMPY_AVAILABLE and np is not None:
+                similarity = np.dot(embeddings[0], embeddings[1]) / (
+                    np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1])
+                )
+            else:
+                # Manual cosine similarity calculation without numpy
+                dot_product = sum(a * b for a, b in zip(embeddings[0], embeddings[1]))
+                norm_a = sum(a * a for a in embeddings[0]) ** 0.5
+                norm_b = sum(b * b for b in embeddings[1]) ** 0.5
+                similarity = dot_product / (norm_a * norm_b) if (norm_a * norm_b) > 0 else 0.0
             return float(similarity)
         except Exception as e:
             self.log(f"Error calculating similarity: {e}", "WARNING")
