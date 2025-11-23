@@ -19,16 +19,24 @@ from longevity_map.agents.gap_analyzer import GapAnalyzer
 from longevity_map.agents.coordination_agent import CoordinationAgent
 from longevity_map.agents.funding_agent import FundingAgent
 
-# Initialize database
-init_db()
+# Initialize database (lazy - will be created on first use if needed)
+# Don't fail if database can't be initialized at import time
+try:
+    init_db()
+except Exception as e:
+    logging.warning(f"Database initialization deferred: {e}")
 
-# Load config
+# Load config - handle missing config.yaml gracefully
 config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
 if not config_path.exists():
     config_path = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
 
-with open(config_path, 'r') as f:
-    config = yaml.safe_load(f)
+try:
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f) or {}
+except Exception as e:
+    logging.warning(f"Could not load config file: {e}. Using defaults.")
+    config = {}
 
 # Create FastAPI app
 app = FastAPI(

@@ -29,12 +29,19 @@ if db_config.get("type") == "postgresql":
     )
 else:
     # SQLite default
-    db_path = db_config.get("sqlite_path", "data/longevity_map.db")
-    # For Vercel/serverless, use /tmp directory
-    if os.environ.get("VERCEL") or "/tmp" in str(db_path):
+    # For Vercel/serverless, use /tmp directory (writable in serverless)
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
         db_path = "/tmp/longevity_map.db"
+        # /tmp always exists in serverless environments
     else:
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        db_path = db_config.get("sqlite_path", "data/longevity_map.db")
+        # Create directory if it doesn't exist
+        db_dir = os.path.dirname(db_path)
+        if db_dir and not os.path.exists(db_dir):
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+            except Exception:
+                pass  # Will fail on first use if directory can't be created
     DATABASE_URL = f"sqlite:///{db_path}"
 
 # SQLite connection args for better concurrency
